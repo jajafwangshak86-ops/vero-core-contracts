@@ -209,10 +209,9 @@ fn test_vote_rejected_without_reputation() {
     let g = add_guardian_with_rep(&env, &client, &admin, 100);
 
     client.register_task(&admin, &7u64);
-    client.vote(&g, &7u64);
 
     let result = client.try_vote(&g, &7u64);
-    assert!(result.is_err(), "duplicate vote should be rejected");
+    assert!(result.is_err(), "vote without reputation should be rejected");
 }
 
 #[test]

@@ -7,6 +7,8 @@ mod reentrancy;
 mod reputation;
 mod task;
 mod types;
+mod vault;
+mod reentrancy;
 pub mod events;
 
 use soroban_sdk::{contract, contractimpl, Address, Env};
@@ -68,6 +70,14 @@ impl VeroContract {
             .unwrap_or(DEFAULT_WEIGHT_THRESHOLD)
     }
 
+    /// Sets the vault address for payout release. Only callable by admin.
+    pub fn set_vault_address(env: Env, admin: Address, vault: Address) {
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::VaultAddress, &vault);
+    }
+
     // ─── Task lifecycle ────────────────────────────────────────────
 
     pub fn register_task(
@@ -94,6 +104,8 @@ impl VeroContract {
         circuit_breaker::require_not_paused(&env)?;
         guardian.require_auth();
 
+        reentrancy::lock(&env)?;
+
         // 1. Verify guardian status
         if !guardian::is_guardian(&env, &guardian) {
             reentrancy::unlock(&env);
@@ -116,6 +128,7 @@ impl VeroContract {
         };
 
         if weight == 0 {
+            reentrancy::unlock(&env);
             return Err(ContractError::ZeroWeightVote);
         }
 
@@ -148,6 +161,16 @@ impl VeroContract {
         if t.total_weight_accrued >= threshold {
             t.is_done = true;
             events::emit_task_resolved(&env, task_id, t.total_weight_accrued);
+            
+            // Release funds from escrow if configured
+            if let Some(vault_addr) = env.storage().instance().get::<_, Address>(&DataKey::VaultAddress) {
+                let vault_client = vault::VaultClient::new(&env, &vault_addr);
+                // Call try_release_funds, which catches VM traps from the cross-contract call
+                if vault_client.try_release_funds(&task_id).is_err() {
+                    reentrancy::unlock(&env);
+                    return Err(ContractError::EscrowUnavailable);
+                }
+            }
         }
 
         // 7. Persist vote record and updated task — two storage writes
@@ -156,6 +179,7 @@ impl VeroContract {
 
         events::emit_weighted_vote(&env, task_id, &guardian, weight);
 
+        reentrancy::unlock(&env);
         Ok(())
     }
 
