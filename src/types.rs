@@ -34,6 +34,9 @@ pub enum DataKey {
     DripsAddress,
     VaultAddress,
     RewardStream(u64), // keyed by task_id
+    TokenAddress,
+    LockThreshold,
+    LockedBalance(Address),
     Lock,              // re-entrancy mutex
     WeightThreshold,
     Reputation(Address),   // u64 reputation score for a guardian
@@ -52,6 +55,11 @@ pub enum ContractError {
     TaskNotVerified = 3,
     StreamAlreadyActive = 4,
     DripsCallFailed = 5,
+    AlreadyInitialized = 6,
+    NotInitialized = 7,
+    InsufficientLockedBalance = 8,
+    StillGuardian = 9,
+    NotGuardian = 10,
     Locked = 6,
     NoReputationScore = 7,
     ZeroWeightVote = 8,

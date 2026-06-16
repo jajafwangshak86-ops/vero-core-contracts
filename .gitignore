@@ -1,2 +1,7 @@
 target/
+musl-toolchain/
+bin/
+lib/
+test_snapshots/
+target/
 Cargo.lock

@@ -40,6 +40,100 @@ pub struct VeroContract;
 
 #[contractimpl]
 impl VeroContract {
+    pub fn initialize(
+        env: Env,
+        token: Address,
+        threshold: i128,
+    ) -> Result<(), ContractError> {
+        let token_key = DataKey::TokenAddress;
+        if env.storage().instance().has(&token_key) {
+            return Err(ContractError::AlreadyInitialized);
+        }
+        env.storage().instance().set(&token_key, &token);
+        env.storage().instance().set(&DataKey::LockThreshold, &threshold);
+        Ok(())
+    }
+
+    pub fn lock_tokens(
+        env: Env,
+        guardian: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        guardian.require_auth();
+
+        let token_key = DataKey::TokenAddress;
+        if !env.storage().instance().has(&token_key) {
+            return Err(ContractError::NotInitialized);
+        }
+        let token_address: Address = env.storage().instance().get(&token_key).unwrap();
+
+        let client = soroban_sdk::token::Client::new(&env, &token_address);
+        client.transfer(&guardian, &env.current_contract_address(), &amount);
+
+        let balance_key = DataKey::LockedBalance(guardian.clone());
+        let current_balance: i128 = env.storage().instance().get(&balance_key).unwrap_or(0);
+        env.storage().instance().set(&balance_key, &(current_balance + amount));
+
+        Ok(())
+    }
+
+    pub fn resign_guardian(
+        env: Env,
+        guardian: Address,
+    ) -> Result<(), ContractError> {
+        guardian.require_auth();
+
+        let token_key = DataKey::TokenAddress;
+        if !env.storage().instance().has(&token_key) {
+            return Err(ContractError::NotInitialized);
+        }
+
+        if !guardian::is_guardian(&env, &guardian) {
+            return Err(ContractError::NotGuardian);
+        }
+
+        let key = DataKey::Guardian(guardian.clone());
+        env.storage().instance().set(&key, &false);
+
+        let balance_key = DataKey::LockedBalance(guardian.clone());
+        let locked_balance: i128 = env.storage().instance().get(&balance_key).unwrap_or(0);
+        if locked_balance > 0 {
+            let token_address: Address = env.storage().instance().get(&token_key).unwrap();
+            let client = soroban_sdk::token::Client::new(&env, &token_address);
+            client.transfer(&env.current_contract_address(), &guardian, &locked_balance);
+            env.storage().instance().set(&balance_key, &0i128);
+        }
+
+        Ok(())
+    }
+
+    pub fn unlock_tokens(
+        env: Env,
+        guardian: Address,
+    ) -> Result<(), ContractError> {
+        guardian.require_auth();
+
+        let token_key = DataKey::TokenAddress;
+        if !env.storage().instance().has(&token_key) {
+            return Err(ContractError::NotInitialized);
+        }
+
+        if guardian::is_guardian(&env, &guardian) {
+            return Err(ContractError::StillGuardian);
+        }
+
+        let balance_key = DataKey::LockedBalance(guardian.clone());
+        let locked_balance: i128 = env.storage().instance().get(&balance_key).unwrap_or(0);
+        if locked_balance > 0 {
+            let token_address: Address = env.storage().instance().get(&token_key).unwrap();
+            let client = soroban_sdk::token::Client::new(&env, &token_address);
+            client.transfer(&env.current_contract_address(), &guardian, &locked_balance);
+            env.storage().instance().set(&balance_key, &0i128);
+        }
+
+        Ok(())
+    }
+
     // ─── Emergency stop ────────────────────────────────────────────
 
     /// Toggles the global pause state. Only callable by admin.
@@ -69,6 +163,10 @@ impl VeroContract {
         require_not_paused(&env)?;
         guardian::add_guardian(&env, admin, guardian);
         Ok(())
+    }
+
+    pub fn is_guardian(env: Env, guardian: Address) -> bool {
+        guardian::is_guardian(&env, &guardian)
     }
 
     // ─── Reputation management ─────────────────────────────────────
@@ -171,7 +269,18 @@ impl VeroContract {
             return Err(ContractError::NotAuthorized);
         }
 
-        // 2. Prevent duplicate votes
+        let token_key = DataKey::TokenAddress;
+        if !env.storage().instance().has(&token_key) {
+            return Err(ContractError::NotInitialized);
+        }
+        let threshold: i128 = env.storage().instance().get(&DataKey::LockThreshold).unwrap_or(0);
+        let balance_key = DataKey::LockedBalance(guardian.clone());
+        let locked_balance: i128 = env.storage().instance().get(&balance_key).unwrap_or(0);
+
+        if locked_balance <= threshold {
+            return Err(ContractError::InsufficientLockedBalance);
+        }
+
         let voted_key = DataKey::Voted(task_id, guardian.clone());
         if env.storage().instance().has(&voted_key) {
             reentrancy::unlock(&env);
