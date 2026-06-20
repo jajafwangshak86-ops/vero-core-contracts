@@ -1,5 +1,7 @@
 use soroban_sdk::{contracterror, contracttype, Address, Map};
 
+pub use crate::contracts::storage_layout::DataKey;
+
 #[contracttype]
 #[derive(Clone)]
 pub struct WithdrawalRequest {
@@ -91,12 +93,34 @@ pub enum Operation {
     RecordFailure = 10,
     ResetCircuitBreaker = 11,
     UpgradeContract = 12,
-    /// `record_snapshot` — records a state snapshot.
     RecordSnapshot = 13,
-    /// `purge_task` — removes a terminal task from storage.
     PurgeTask = 14,
     /// `vote_batch` — vote on multiple tasks in one transaction.
     VoteBatch = 15,
+}
+
+/// Batch call variants for the `batch_execute` entry point.
+#[contracttype]
+#[derive(Clone)]
+pub enum BatchCall {
+    RegisterTask(Address, u64),
+    CancelTask(Address, u64),
+    Vote(Address, u64),
+    AddGuardian(Address, Address),
+    RemoveGuardian(Address, Address),
+    SetReputation(Address, Address, u64),
+    LockTokens(Address, i128),
+    RequestUnlock(Address),
+    UnlockTokens(Address),
+    ResignGuardian(Address),
+    SetWeightThreshold(Address, u64),
+    SetVaultAddress(Address, Address),
+    StartRewardStream(Address, Address, Address, u64),
+    TogglePause(Address),
+    Pause(Address),
+    Unpause(Address),
+    RecordFailure(Address),
+    ResetCircuitBreaker(Address),
 }
 
 #[contracterror]
@@ -129,6 +153,9 @@ pub enum ContractError {
     TaskNotStale = 25,
     SnapshotNotFound = 26,
     WithdrawalTimelockActive = 27,
+    TaskNotTerminal = 28,
+    InsufficientReputation = 29,
+}
     /// Task is still active (not done and not cancelled) and cannot be purged.
     TaskNotTerminal = 28,
     /// Guardian's reputation score is below the minimum threshold to vote.

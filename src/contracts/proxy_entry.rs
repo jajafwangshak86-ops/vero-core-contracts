@@ -338,7 +338,7 @@ impl VeroContract {
                 BatchCall::Unpause(admin) => Self::unpause(env.clone(), admin)?,
                 BatchCall::RecordFailure(_admin) => Self::record_failure(env.clone()),
                 BatchCall::ResetCircuitBreaker(admin) => {
-                    Self::reset_circuit_breaker(env.clone(), admin)
+                    Self::reset_circuit_breaker(env.clone(), admin)?
                 }
             }
         }
